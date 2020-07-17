@@ -213,7 +213,7 @@ public class JsonObjectDecoder extends ByteToMessageDecoder {
                     }
                 }
                 // The double quote isn't escaped only if there are even "\"s.
-                if ((backslashCount & -backslashCount) == backslashCount) {
+                if (backslashCount % 2 == 0) {
                     // Since the double quote isn't escaped then this is the end of a string.
                     insideString = false;
                 }
