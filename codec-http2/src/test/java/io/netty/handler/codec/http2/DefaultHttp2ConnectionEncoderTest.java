@@ -50,10 +50,9 @@ import static io.netty.handler.codec.http2.Http2Stream.State.HALF_CLOSED_REMOTE;
 import static io.netty.handler.codec.http2.Http2Stream.State.RESERVED_LOCAL;
 import static io.netty.handler.codec.http2.Http2TestUtil.newVoidPromise;
 import static io.netty.util.CharsetUtil.UTF_8;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -353,7 +352,7 @@ public class DefaultHttp2ConnectionEncoderTest {
 
     @Test
     public void writeHeadersUsingVoidPromise() throws Exception {
-        final Throwable cause = new RuntimeException("fake exception");
+        final Throwable cause = Http2TestUtil.FAKE_EXCEPTION;
         when(writer.writeHeaders(eq(ctx), eq(STREAM_ID), any(Http2Headers.class),
                                  anyInt(), anyBoolean(), any(ChannelPromise.class)))
                 .then(new Answer<ChannelFuture>() {
@@ -387,6 +386,31 @@ public class DefaultHttp2ConnectionEncoderTest {
         assertEquals(10, (int) writtenPadding.get(0));
         assertEquals(0, data.refCnt());
         assertTrue(p.isSuccess());
+    }
+
+    @Test
+    public void writeDataFailsStreamWhenFlowControlledQueueUnderDelivers() throws Exception {
+        createStream(STREAM_ID, false);
+        ByteBuf data = wrappedBuffer(new byte[10]);
+        ChannelPromise promise = newPromise();
+        // Include padding so we also cover that dataSize and padding are reset on failure.
+        encoder.writeData(ctx, STREAM_ID, data, 10, false, promise);
+        FlowControlled fc = payloadCaptor.getValue();
+        assertEquals(20, fc.size());
+
+        // Simulate a queued buffer being consumed out from under the queue
+        data.skipBytes(data.readableBytes());
+
+        fc.write(ctx, 20);
+
+        // Expect the stream to fail rather than emitting any frames
+        assertFalse(promise.isSuccess());
+        assertInstanceOf(Http2Exception.class, promise.cause());
+        assertEquals(Http2Error.INTERNAL_ERROR, ((Http2Exception) promise.cause()).error());
+        assertTrue(writtenData.isEmpty());
+        // The frame reports as fully consumed so it is removed and its bytes return to flow control.
+        assertEquals(0, fc.size());
+        assertEquals(0, data.refCnt());
     }
 
     @Test
@@ -834,7 +858,7 @@ public class DefaultHttp2ConnectionEncoderTest {
         encoder.writeData(ctx, STREAM_ID, data, 0, false, promise);
         assertTrue(promise.isDone());
         assertFalse(promise.isSuccess());
-        assertThat(promise.cause(), instanceOf(IllegalArgumentException.class));
+        assertInstanceOf(IllegalArgumentException.class, promise.cause());
         verify(data).release();
     }
 
@@ -846,7 +870,7 @@ public class DefaultHttp2ConnectionEncoderTest {
         encoder.writeData(ctx, STREAM_ID, data, 0, false, promise);
         assertTrue(promise.isDone());
         assertFalse(promise.isSuccess());
-        assertThat(promise.cause(), instanceOf(IllegalStateException.class));
+        assertInstanceOf(IllegalStateException.class, promise.cause());
         verify(data).release();
     }
 

@@ -308,6 +308,27 @@ public class IdleStateHandler extends ChannelDuplexHandler {
         }
     }
 
+    /**
+     * Reset the read timeout. As this handler is not thread-safe, this method <b>must</b> be called on the event loop.
+     */
+    public void resetReadTimeout() {
+        if (readerIdleTimeNanos > 0 || allIdleTimeNanos > 0) {
+            lastReadTime = ticksInNanos();
+            reading = false;
+            firstReaderIdleEvent = firstAllIdleEvent = true;
+        }
+    }
+
+    /**
+     * Reset the write timeout. As this handler is not thread-safe, this method <b>must</b> be called on the event loop.
+     */
+    public void resetWriteTimeout() {
+        if (writerIdleTimeNanos > 0 || allIdleTimeNanos > 0) {
+            lastWriteTime = ticksInNanos();
+            firstWriterIdleEvent = firstAllIdleEvent = true;
+        }
+    }
+
     private void initialize(ChannelHandlerContext ctx) {
         // Avoid the case where destroy() is called before scheduling timeouts.
         // See: https://github.com/netty/netty/issues/143

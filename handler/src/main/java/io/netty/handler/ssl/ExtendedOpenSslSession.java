@@ -31,11 +31,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Delegates all operations to a wrapped {@link OpenSslSession} except the methods defined by {@link ExtendedSSLSession}
- * itself.
+ * Delegates all operations to a wrapped {@link OpenSslInternalSession} except the methods defined by
+ * {@link ExtendedSSLSession} itself.
  */
 @SuppressJava6Requirement(reason = "Usage guarded by java version check")
-abstract class ExtendedOpenSslSession extends ExtendedSSLSession implements OpenSslSession {
+abstract class ExtendedOpenSslSession extends ExtendedSSLSession implements OpenSslInternalSession {
 
     // TODO: use OpenSSL API to actually fetch the real data but for now just do what Conscrypt does:
     // https://github.com/google/conscrypt/blob/1.2.0/common/
@@ -46,9 +46,9 @@ abstract class ExtendedOpenSslSession extends ExtendedSSLSession implements Open
             "RSASSA-PSS",
     };
 
-    private final OpenSslSession wrapped;
+    private final OpenSslInternalSession wrapped;
 
-    ExtendedOpenSslSession(OpenSslSession wrapped) {
+    ExtendedOpenSslSession(OpenSslInternalSession wrapped) {
         this.wrapped = wrapped;
     }
 
@@ -65,13 +65,24 @@ abstract class ExtendedOpenSslSession extends ExtendedSSLSession implements Open
     }
 
     @Override
+    public void prepareHandshake() {
+        wrapped.prepareHandshake();
+    }
+
+    @Override
+    public Map<String, Object> keyValueStorage() {
+        return wrapped.keyValueStorage();
+    }
+
+    @Override
     public OpenSslSessionId sessionId() {
         return wrapped.sessionId();
     }
 
     @Override
-    public void setSessionDetails(long creationTime, long lastAccessedTime, OpenSslSessionId id) {
-        wrapped.setSessionDetails(creationTime, lastAccessedTime, id);
+    public void setSessionDetails(long creationTime, long lastAccessedTime, OpenSslSessionId id,
+                                  Map<String, Object> keyValueStorage) {
+        wrapped.setSessionDetails(creationTime, lastAccessedTime, id, keyValueStorage);
     }
 
     @Override
@@ -164,6 +175,11 @@ abstract class ExtendedOpenSslSession extends ExtendedSSLSession implements Open
     }
 
     @Override
+    public boolean hasPeerCertificates() {
+        return wrapped.hasPeerCertificates();
+    }
+
+    @Override
     public final Certificate[] getLocalCertificates() {
         return wrapped.getLocalCertificates();
     }
@@ -236,6 +252,16 @@ abstract class ExtendedOpenSslSession extends ExtendedSSLSession implements Open
     public void handshakeFinished(byte[] id, String cipher, String protocol, byte[] peerCertificate,
                                   byte[][] peerCertificateChain, long creationTime, long timeout) throws SSLException {
         wrapped.handshakeFinished(id, cipher, protocol, peerCertificate, peerCertificateChain, creationTime, timeout);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        return wrapped.equals(o);
+    }
+
+    @Override
+    public int hashCode() {
+        return wrapped.hashCode();
     }
 
     @Override

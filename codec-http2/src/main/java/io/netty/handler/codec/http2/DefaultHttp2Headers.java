@@ -20,7 +20,6 @@ import io.netty.handler.codec.http.HttpHeaderValidationUtil;
 import io.netty.util.AsciiString;
 import io.netty.util.ByteProcessor;
 import io.netty.util.internal.PlatformDependent;
-import io.netty.util.internal.UnstableApi;
 
 import static io.netty.handler.codec.http2.Http2Error.PROTOCOL_ERROR;
 import static io.netty.handler.codec.http2.Http2Exception.connectionError;
@@ -30,7 +29,6 @@ import static io.netty.util.AsciiString.CASE_INSENSITIVE_HASHER;
 import static io.netty.util.AsciiString.CASE_SENSITIVE_HASHER;
 import static io.netty.util.AsciiString.isUpperCase;
 
-@UnstableApi
 public class DefaultHttp2Headers
         extends DefaultHeaders<CharSequence, CharSequence, Http2Headers> implements Http2Headers {
     private static final ByteProcessor HTTP2_NAME_VALIDATOR_PROCESSOR = new ByteProcessor() {
@@ -54,6 +52,15 @@ public class DefaultHttp2Headers
                 }
                 // no need for lower-case validation, we trust our own pseudo header constants
                 return;
+            }
+
+            // RFC 9113 Section 8.2.1: HTTP/2 field names are valid HTTP/1.1 tokens (RFC 7230 Section 3.2.6)
+            // with the additional constraint that they MUST be lowercase. Reject anything outside the token
+            // grammar (non-ASCII, control characters, SP/HTAB, separators) before the lowercase check.
+            int tokenIndex = HttpHeaderValidationUtil.validateToken(name);
+            if (tokenIndex != -1) {
+                PlatformDependent.throwException(connectionError(PROTOCOL_ERROR,
+                        "invalid header name [%s]", name));
             }
 
             if (name instanceof AsciiString) {

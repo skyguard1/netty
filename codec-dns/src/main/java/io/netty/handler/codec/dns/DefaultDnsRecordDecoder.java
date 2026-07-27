@@ -16,14 +16,13 @@
 package io.netty.handler.codec.dns;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.util.internal.UnstableApi;
+import io.netty.handler.codec.CorruptedFrameException;
 
 /**
  * The default {@link DnsRecordDecoder} implementation.
  *
  * @see DefaultDnsRecordEncoder
  */
-@UnstableApi
 public class DefaultDnsRecordDecoder implements DnsRecordDecoder {
 
     static final String ROOT = ".";
@@ -97,12 +96,59 @@ public class DefaultDnsRecordDecoder implements DnsRecordDecoder {
                     name, dnsClass, timeToLive, decodeName0(in.duplicate().setIndex(offset, offset + length)));
         }
         if (type == DnsRecordType.CNAME || type == DnsRecordType.NS) {
-            return new DefaultDnsRawRecord(name, type, dnsClass, timeToLive,
-                                           DnsCodecUtil.decompressDomainName(
-                                                   in.duplicate().setIndex(offset, offset + length)));
+            ByteBuf decompressed = DnsCodecUtil.decompressDomainName(
+                    in.duplicate().setIndex(offset, offset + length));
+            try {
+                DnsRecord record = new DefaultDnsRawRecord(name, type, dnsClass, timeToLive, decompressed);
+                decompressed = null;
+                return record;
+            } finally {
+                if (decompressed != null) {
+                    decompressed.release();
+                }
+            }
         }
-        return new DefaultDnsRawRecord(
-                name, type, dnsClass, timeToLive, in.retainedDuplicate().setIndex(offset, offset + length));
+        if (type ==  DnsRecordType.MX) {
+            // MX RDATA: 16-bit preference + exchange (domain name, possibly compressed)
+            if (length < 3) {
+                throw new CorruptedFrameException("MX record RDATA is too short: " + length);
+            }
+            final int pref = in.getUnsignedShort(offset);
+            ByteBuf exchange = null;
+            ByteBuf out = null;
+            try {
+                exchange = DnsCodecUtil.decompressDomainName(
+                        in.duplicate().setIndex(offset + 2, offset + length));
+
+                // Build decompressed RDATA = [preference][expanded exchange name]
+                out = in.alloc().buffer(2 + exchange.readableBytes());
+                out.writeShort(pref);
+                out.writeBytes(exchange);
+
+                DnsRecord record = new DefaultDnsRawRecord(name, type, dnsClass, timeToLive, out);
+                out = null;
+                return record;
+            } finally {
+                if (exchange != null) {
+                    exchange.release();
+                }
+                if (out != null) {
+                    out.release();
+                }
+            }
+        }
+
+        ByteBuf content = in.retainedDuplicate();
+        try {
+            content.setIndex(offset, offset + length);
+            DnsRecord record = new DefaultDnsRawRecord(name, type, dnsClass, timeToLive, content);
+            content = null;
+            return record;
+        } finally {
+            if (content != null) {
+                content.release();
+            }
+        }
     }
 
     /**
